@@ -1,5 +1,27 @@
 # Progress
 
+## Phase 144 (README visuals sanitized for public promotion) — Completed
+- Scope:
+  - Remove real operational content from the public README visuals before promotion.
+  - Keep the public-facing README visually representative without exposing real runtime names, recent output, or live usage totals.
+- Changed files:
+  - `README.md`
+  - `README.en.md`
+  - `docs/assets/readme-hero-zh.svg`
+  - `docs/assets/readme-hero-en.svg`
+  - `docs/assets/readme-token-zh.svg`
+  - `docs/assets/readme-token-en.svg`
+  - `docs/assets/readme-staff-zh.svg`
+  - `docs/assets/readme-staff-en.svg`
+  - `docs/PROGRESS.md`
+- Implementation:
+  - Replaced public README screenshot assets with language-specific sanitized SVG illustrations.
+  - Removed real job names, recent-output snippets, and live usage figures from the public-facing visuals.
+  - Updated README copy from literal screenshot framing to sanitized preview framing.
+- Verification:
+  - visual review of the README-linked assets
+  - `npm run release:audit`
+
 ## Phase 143 (Tasks page now defaults to schedule and cron execution) — Completed
 - Scope:
   - Stop making the tasks page look empty or contradictory when staff are active through cron/ad-hoc sessions but there are no tracked task rows.
@@ -1286,7 +1308,7 @@
   - `node --import tsx --test test/ui-render-smoke.test.ts` passed (`9/9`).
   - `pm2 restart pandas-control-center` completed.
   - runtime smoke:
-    - overview page renders real job names (e.g. `x-radar-finalize`, `youtube-radar-search`).
+    - overview page renders real job names from the runtime catalog.
     - cron catalog source shown as `~/.openclaw/cron/jobs.json`.
     - heartbeat shows latest execution metadata.
 
