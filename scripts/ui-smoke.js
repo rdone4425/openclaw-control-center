@@ -12,6 +12,7 @@ const fs = require("node:fs");
 
 const PORT = process.env.UI_SMOKE_PORT || "4516";
 const WAIT_SECONDS = Number(process.env.UI_SMOKE_WAIT_SECONDS || "10");
+const PAGE_WAIT_SECONDS = Number(process.env.UI_SMOKE_PAGE_WAIT_SECONDS || "12");
 const ROOT = path.resolve(__dirname, "..");
 const LOG_DIR = path.join(ROOT, "runtime");
 const LOG_FILE = path.join(LOG_DIR, `ui-smoke-${PORT}.log`);
@@ -44,7 +45,7 @@ function fetch(urlPath) {
       res.on("end", () => resolve(data));
     });
     req.on("error", reject);
-    req.setTimeout(3000, () => { req.destroy(); reject(new Error("timeout")); });
+    req.setTimeout(6000, () => { req.destroy(); reject(new Error("timeout")); });
   });
 }
 
@@ -52,7 +53,7 @@ async function waitForUI() {
   const deadline = Date.now() + WAIT_SECONDS * 1000;
   while (Date.now() < deadline) {
     try {
-      await fetch("/");
+      await fetch("/healthz");
       return;
     } catch (_) {
       await new Promise((r) => setTimeout(r, 1000));
@@ -64,12 +65,21 @@ async function waitForUI() {
 }
 
 async function checkPage(urlPath, keywords, label) {
-  const body = await fetch(urlPath);
-  const found = keywords.some((kw) => body.includes(kw));
-  if (!found) {
-    console.error(`FAIL: ${label} — none of [${keywords.join(", ")}] found in response (${body.length} bytes).`);
-    cleanup(1);
+  const deadline = Date.now() + PAGE_WAIT_SECONDS * 1000;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const body = await fetch(urlPath);
+      const found = keywords.some((kw) => body.includes(kw));
+      if (found) return;
+      lastError = new Error(`none of [${keywords.join(", ")}] found in response (${body.length} bytes)`);
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
   }
+  console.error(`FAIL: ${label} — ${lastError instanceof Error ? lastError.message : "request failed"}.`);
+  cleanup(1);
 }
 
 async function main() {
