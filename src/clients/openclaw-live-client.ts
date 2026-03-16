@@ -145,6 +145,11 @@ export class OpenClawLiveClient implements ToolClient {
     if (sessionFile) {
       const fromFile = await readSessionHistoryFile(sessionFile, limit);
       if (fromFile) return fromFile;
+      // If sessionFile was provided but unreadable (e.g. ENOENT), return empty
+      // immediately instead of falling through to slow CLI commands that each
+      // block for ~14 seconds.  The file path is authoritative — when it does
+      // not exist on disk there is nothing useful the CLI can add.
+      return { rawText: "" };
     }
     const attempts: string[][] = [
       ["sessions", "history", sessionKey, "--json", "--limit", String(limit)],
