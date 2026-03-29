@@ -253,6 +253,7 @@ const SHARED_DOCUMENT_FILE_CANDIDATES = [
   "TOOLS.md",
   join(".learnings", "LEARNINGS.md"),
   join("control-center", "README.md"),
+  join("control-center", "HALL.md"),
 ] as const;
 const AGENT_DOCUMENT_FILE_CANDIDATES = [
   "AGENTS.md",
@@ -12213,6 +12214,7 @@ function documentFilePriority(relativePath: string): number {
     "identity.md",
     "soul.md",
     "user.md",
+    "hall.md",
     "tasks.md",
     "bootstrap.md",
     "heartbeat.md",

@@ -84,6 +84,7 @@ Example UI from a local OpenClaw environment:
 ## Hall workflow
 - Start with one task in the hall. The first turn stays in `discussion`.
 - Unless you explicitly `@` one agent, the hall aims to gather at least two short replies so the second person can add a missing angle instead of repeating the first.
+- Edit the repo-root `HALL.md` file if you want one shared collaboration style for the whole hall. It is injected into discussion, execution, and handoff turns, but it does not override owner routing or queued execution order.
 - Use `Arrange execution order` to decide the first owner, later owners, and what each person hands off.
 - Saving the order does **not** start execution.
 - Once the queue is ready, the decision card will show `Start execution (...)`.

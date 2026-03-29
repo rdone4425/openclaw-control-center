@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { ToolClient } from "../clients/tool-client";
 import {
   HALL_RUNTIME_DIRECT_STREAM_ENABLED,
@@ -162,6 +162,9 @@ const CONTROL_CENTER_REPO_ENTRY_FILES = [
   "src/runtime/hall-runtime-dispatch.ts",
   "src/types.ts",
 ];
+const HALL_RULES_OVERRIDE_ENV = "OPENCLAW_HALL_RULES_PATH";
+const HALL_RULES_DEFAULT_FILE = "HALL.md";
+const HALL_RULES_MAX_CHARS = 6_000;
 const HALL_REPO_CONTEXT_MAX_FILE_CHARS = 1_600;
 const HALL_REPO_CONTEXT_MAX_TOTAL_CHARS = 7_200;
 const HALL_WORKSPACE_PERSONA_FILES = ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "README.md"];
@@ -386,6 +389,7 @@ function buildHallRuntimePrompt(input: HallRuntimeDispatchInput, repoContext: Ha
   const roundRosterBlock = discussionMode
     ? buildHallDiscussionRosterBlock(input)
     : buildHallRuntimeRosterBlock(input);
+  const hallRulesBlock = buildHallRulesPromptBlock();
   const selfWorkspacePersona = !discussionMode || isDiscussionParticipantExplicitlyMentioned(input)
     ? describeHallParticipantWorkspacePersona(input.participant)
     : "";
@@ -404,6 +408,7 @@ function buildHallRuntimePrompt(input: HallRuntimeDispatchInput, repoContext: Ha
     recentMessages.length > 0 ? `Recent agent contributions already in thread: ${countRecentAgentContributors(recentMessages)}.` : "",
     transcriptBlock,
     roundRosterBlock,
+    hallRulesBlock,
     !discussionMode ? `Your semantic responsibility is ${role}.` : "",
     selfWorkspacePersona ? `Your workspace persona and job boundary: ${selfWorkspacePersona}` : "",
     taskArtifactBlock,
@@ -534,6 +539,19 @@ function buildHallRuntimePrompt(input: HallRuntimeDispatchInput, repoContext: Ha
     "Do not write a project recap, status memo, or generic brainstorming. If there is a next queued owner and you are not blocked, hand off instead of lingering on your own step.",
     'Structured JSON keys you may include: "latestSummary", "blockers", "requiresInputFrom", "doneWhen", "nextAction", "nextStep", "artifactRefs".',
     'Allowed nextAction values: "continue" when you need one more pass on your current execution item, "handoff" when your current execution item is complete and the next queued owner should take over, "review" when the work is ready for review and there is no further handoff, and "blocked" when you need help before continuing.',
+  ].filter(Boolean).join("\n");
+}
+
+function buildHallRulesPromptBlock(): string {
+  const guide = readHallRulesGuide();
+  if (!guide) return "";
+  return [
+    `Shared hall collaboration guide (${guide.label}):`,
+    "Apply these shared preferences to tone, collaboration style, disagreement style, review style, and handoff wording whenever they do not conflict with an explicit operator request, the current owner, queued execution order, or hard hall routing/state rules.",
+    guide.content,
+    guide.truncated
+      ? "Only the leading portion of the shared hall guide was included. Keep the file concise if you want every rule to be visible."
+      : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -823,6 +841,40 @@ function describeHallParticipantWorkspacePersona(participant: HallParticipant): 
   const summary = summarizeWorkspacePersonaFromFiles(workspaceRoot);
   HALL_WORKSPACE_PERSONA_CACHE.set(cacheKey, summary);
   return summary;
+}
+
+function readHallRulesGuide(): { label: string; content: string; truncated: boolean } | undefined {
+  const sourcePath = resolveHallRulesGuidePath();
+  if (!existsSync(sourcePath)) return undefined;
+  let raw = "";
+  try {
+    raw = readFileSync(sourcePath, "utf8");
+  } catch {
+    return undefined;
+  }
+  const normalized = raw.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return undefined;
+  const truncated = normalized.length > HALL_RULES_MAX_CHARS;
+  return {
+    label: displayHallRulesGuidePath(sourcePath),
+    content: truncated
+      ? `${normalized.slice(0, Math.max(0, HALL_RULES_MAX_CHARS - 16)).trimEnd()}\n[truncated]`
+      : normalized,
+    truncated,
+  };
+}
+
+function resolveHallRulesGuidePath(): string {
+  const explicit = process.env[HALL_RULES_OVERRIDE_ENV]?.trim();
+  if (explicit) return explicit;
+  return join(CONTROL_CENTER_REPO_ROOT, HALL_RULES_DEFAULT_FILE);
+}
+
+function displayHallRulesGuidePath(sourcePath: string): string {
+  const normalizedSource = sourcePath.trim();
+  const repoRelative = relative(CONTROL_CENTER_REPO_ROOT, normalizedSource).trim();
+  if (repoRelative && !repoRelative.startsWith("..")) return repoRelative;
+  return normalizedSource;
 }
 
 export function summarizeWorkspacePersonaFromFiles(workspaceRoot: string): string {

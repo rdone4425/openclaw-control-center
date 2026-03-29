@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
@@ -22,6 +24,166 @@ test("workspace persona summary reuses existing agent files instead of hall-only
   assert.match(monkeyPersona, /(YouTube|视频转长文|价值提炼器)/);
   assert.match(pandasPersona, /(编码与实现|工程实现|验证驱动)/);
   assert.match(coqPersona, /(每日新闻|趋势简报|早晚报主编)/);
+});
+
+test("shared hall guide is injected into discussion and execution prompts from an override path", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "hall-rules-guide-"));
+  const hallRulesPath = join(tempDir, "custom-hall.md");
+  const previousRulesPath = process.env.OPENCLAW_HALL_RULES_PATH;
+  const capturedPrompts: string[] = [];
+
+  await writeFile(
+    hallRulesPath,
+    [
+      "# Shared Hall Rules",
+      "- Push useful disagreement when it sharpens the output.",
+      "- Reviewer only raises must-fix issues before optional polish.",
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    process.env.OPENCLAW_HALL_RULES_PATH = hallRulesPath;
+
+    const client = {
+      sessionsHistory: async () => ({ history: [] }),
+      agentRun: async (request: { sessionKey?: string; message: string }) => {
+        capturedPrompts.push(request.message);
+        return {
+          ok: true,
+          text: "第一版先锁住了。",
+          rawText: "",
+          sessionKey: request.sessionKey,
+        };
+      },
+    } as never;
+
+    await dispatchHallRuntimeTurn({
+      client,
+      hall: {
+        hallId: "hall",
+        participants: [],
+        updatedAt: new Date().toISOString(),
+      } as never,
+      taskCard: {
+        taskCardId: "discussion-card",
+        hallId: "hall",
+        projectId: "project",
+        taskId: "task-global-discussion",
+        title: "我想录一个群聊功能视频",
+        description: "先讨论整体讲法",
+        stage: "discussion",
+        status: "todo",
+        createdByParticipantId: "operator",
+        blockers: [],
+        requiresInputFrom: [],
+        mentionedParticipantIds: [],
+        plannedExecutionOrder: [],
+        plannedExecutionItems: [],
+        sessionKeys: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as never,
+      participant: {
+        participantId: "coq",
+        agentId: "coq",
+        displayName: "Coq-每日新闻",
+        semanticRole: "planner",
+        aliases: [],
+        active: true,
+      } as never,
+      triggerMessage: {
+        hallId: "hall",
+        messageId: "trigger-discussion",
+        kind: "task",
+        authorParticipantId: "operator",
+        authorLabel: "Operator",
+        content: "先给我一个整体方向",
+        createdAt: new Date().toISOString(),
+      } as never,
+      mode: "discussion",
+    });
+
+    await dispatchHallRuntimeTurn({
+      client,
+      hall: {
+        hallId: "hall",
+        participants: [
+          {
+            participantId: "monkey",
+            agentId: "monkey",
+            displayName: "Monkey",
+            semanticRole: "coder",
+            aliases: [],
+            active: true,
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      } as never,
+      taskCard: {
+        taskCardId: "execution-card",
+        hallId: "hall",
+        projectId: "project",
+        taskId: "task-global-execution",
+        title: "我想录一个群聊功能视频",
+        description: "开始写开头",
+        stage: "execution",
+        status: "doing",
+        createdByParticipantId: "operator",
+        currentOwnerParticipantId: "monkey",
+        currentOwnerLabel: "Monkey",
+        blockers: [],
+        requiresInputFrom: [],
+        mentionedParticipantIds: [],
+        plannedExecutionOrder: [],
+        plannedExecutionItems: [
+          {
+            itemId: "step-1",
+            participantId: "monkey",
+            task: "Write three spoken openings",
+          },
+        ],
+        currentExecutionItem: {
+          itemId: "step-1",
+          participantId: "monkey",
+          task: "Write three spoken openings",
+        },
+        sessionKeys: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as never,
+      participant: {
+        participantId: "monkey",
+        agentId: "monkey",
+        displayName: "Monkey",
+        semanticRole: "coder",
+        aliases: [],
+        active: true,
+      } as never,
+      triggerMessage: {
+        hallId: "hall",
+        messageId: "trigger-execution",
+        kind: "decision",
+        authorParticipantId: "operator",
+        authorLabel: "Operator",
+        content: "开始执行",
+        createdAt: new Date().toISOString(),
+      } as never,
+      mode: "execution",
+    });
+  } finally {
+    if (previousRulesPath === undefined) delete process.env.OPENCLAW_HALL_RULES_PATH;
+    else process.env.OPENCLAW_HALL_RULES_PATH = previousRulesPath;
+    await rm(tempDir, { recursive: true, force: true });
+  }
+
+  assert.equal(capturedPrompts.length, 2);
+  for (const prompt of capturedPrompts) {
+    assert.match(prompt, /Shared hall collaboration guide/i);
+    assert.match(prompt, /Push useful disagreement when it sharpens the output\./);
+    assert.match(prompt, /Reviewer only raises must-fix issues before optional polish\./);
+  }
+  assert.match(capturedPrompts[1], /Your current execution item: Write three spoken openings/);
 });
 
 test("brand-new hall threads use a thread-scoped runtime session instead of the shared hall agent session", async () => {
