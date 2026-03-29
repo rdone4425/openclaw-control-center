@@ -893,29 +893,7 @@ export function renderCollaborationHallClientScript(language: UiLanguage): strin
   };
   const syntheticDiscussionDrafts = (taskCard) => {
     if (!taskCard || taskCard.stage !== 'discussion') return [];
-    const expectedParticipantIds = Array.isArray(taskCard.discussionCycle?.expectedParticipantIds)
-      ? taskCard.discussionCycle.expectedParticipantIds
-      : [];
-    const completedParticipantIds = new Set(Array.isArray(taskCard.discussionCycle?.completedParticipantIds)
-      ? taskCard.discussionCycle.completedParticipantIds
-      : []);
-    const pendingParticipantIds = expectedParticipantIds.filter((participantId) => !completedParticipantIds.has(participantId));
-    if (pendingParticipantIds.length === 0) return [];
-    const createdAt = taskCard.updatedAt || taskCard.createdAt || new Date().toISOString();
-    return pendingParticipantIds.slice(0, 3).map((participantId) => ({
-      draftId: 'synthetic-discussion:' + taskCard.taskCardId + ':' + participantId,
-      createdAt,
-      lastDeltaAt: createdAt,
-      authorLabel: participantLabel(participantId),
-      authorParticipantId: participantId,
-      authorSemanticRole: participantIndex.get(participantId)?.semanticRole,
-      messageKind: participantIndex.get(participantId)?.semanticRole === 'manager' ? 'decision' : 'proposal',
-      taskCardId: taskCard.taskCardId,
-      projectId: taskCard.projectId,
-      taskId: taskCard.taskId,
-      roomId: taskCard.roomId,
-      content: '',
-    }));
+    return [];
   };
   const syntheticExecutionHandoffDraft = (taskCard, persistedThreadMessages) => {
     if (!taskCard || taskCard.stage !== 'execution' || !taskCard.currentOwnerParticipantId) return [];
@@ -1363,6 +1341,10 @@ export function renderCollaborationHallClientScript(language: UiLanguage): strin
     const forceVisible = options.forceVisible === true;
     const taskCard = payload?.taskCard;
     const activeDrafts = visibleDrafts();
+    const hasDiscussionOutcome = Boolean(
+      String(taskCard?.proposal || '').trim()
+      || String(taskCard?.latestSummary || '').trim(),
+    );
     const hasExecutionPlan = (taskCard?.plannedExecutionOrder || []).length > 0 || (taskCard?.plannedExecutionItems || []).length > 0;
     const hasExecutionEntryPoint = Boolean(
       hasExecutionPlan
@@ -1372,6 +1354,7 @@ export function renderCollaborationHallClientScript(language: UiLanguage): strin
     const hasFinalizedDecision = Boolean(
       taskCard?.decision
       || taskCard?.doneWhen
+      || hasDiscussionOutcome
       || taskCard?.currentOwnerParticipantId
       || taskCard?.currentExecutionItem
       || taskCard?.discussionCycle?.closedAt
@@ -3029,10 +3012,15 @@ function renderInitialDecisionPanel(
   language: UiLanguage,
 ): string {
   if (!selectedTaskCard) return "";
+  const hasDiscussionOutcome = Boolean(
+    String(selectedTaskCard.proposal || "").trim()
+    || String(selectedTaskCard.latestSummary || "").trim(),
+  );
   const hasExecutionPlan = (selectedTaskCard.plannedExecutionOrder || []).length > 0 || (selectedTaskCard.plannedExecutionItems || []).length > 0;
   const hasVisibleDecision = Boolean(
     selectedTaskCard.decision
     || selectedTaskCard.doneWhen
+    || hasDiscussionOutcome
     || selectedTaskCard.currentOwnerParticipantId
     || selectedTaskCard.currentExecutionItem
     || selectedTaskCard.discussionCycle?.closedAt

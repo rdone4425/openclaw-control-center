@@ -564,6 +564,7 @@ test("memory and workspace sections expose editable file workbenches", async () 
 test("editable agent scopes follow configured agents before workspace folders", async () => {
   const {
     resolveOpenClawWorkspaceRootForSmoke,
+    resolveUiBindAddressForSmoke,
     resolveEditableAgentScopesFromConfigForSmoke,
     resolveEditableAgentScopesWithFallbackForSmoke,
   } = await import("../src/ui/server");
@@ -595,6 +596,26 @@ test("editable agent scopes follow configured agents before workspace folders", 
       openclawHomeDir: "/tmp/openclaw-home/.openclaw",
     }),
     "/tmp/openclaw-home/.openclaw/workspace",
+  );
+
+  assert.equal(
+    resolveUiBindAddressForSmoke({
+      publicUiUrl: "http://100.64.0.10:4310/?section=hall-chat",
+    }),
+    "0.0.0.0",
+  );
+  assert.equal(
+    resolveUiBindAddressForSmoke({
+      publicUiUrl: "http://localhost:4310/?section=hall-chat",
+    }),
+    "127.0.0.1",
+  );
+  assert.equal(
+    resolveUiBindAddressForSmoke({
+      explicitBindAddress: "0.0.0.0",
+      publicUiUrl: "http://localhost:4310/?section=hall-chat",
+    }),
+    "0.0.0.0",
   );
 
   const scopes = resolveEditableAgentScopesFromConfigForSmoke({

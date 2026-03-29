@@ -109,6 +109,7 @@ Then open:
 Notes:
 - Prefer `npm run dev:ui`; it is the more reliable cross-platform entry, especially on Windows shells.
 - `npm run dev` only performs one monitor pass and does not start the HTTP UI.
+- If you want to reach the UI over Tailscale, set `OPENCLAW_CONTROL_UI_URL` to your Tailscale host or IP (for example `http://<tailscale-host>:4310/`). The UI will automatically bind to `0.0.0.0` unless you explicitly override `UI_BIND_ADDRESS`.
 
 ## Section-by-section tour
 

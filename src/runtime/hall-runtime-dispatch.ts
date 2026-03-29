@@ -349,6 +349,12 @@ export async function dispatchHallRuntimeTurn(input: HallRuntimeDispatchInput): 
 }
 
 function buildHallRuntimePrompt(input: HallRuntimeDispatchInput, repoContext: HallRuntimeRepoContext): string {
+  const discussionMode = input.mode === "discussion";
+  const firstParticipantTurnInThread = isFirstParticipantTurnInHallThread(
+    input.taskCard,
+    input.participant.agentId ?? input.participant.participantId,
+  );
+  const cleanThreadOpeningGuard = shouldApplyCleanHallThreadOpeningGuard(input, firstParticipantTurnInThread);
   const responseLanguage = inferHallResponseLanguage(
     input.triggerMessage?.content
       ?? `${input.taskCard.title}\n${input.taskCard.description}\n${input.task?.title ?? ""}`,
@@ -362,7 +368,7 @@ function buildHallRuntimePrompt(input: HallRuntimeDispatchInput, repoContext: Ha
   const transcriptBlock = recentMessages.length > 0
     ? [
         "Recent shared thread transcript (oldest -> newest):",
-        ...recentMessages.map((message) => `- ${message.authorLabel}${message.authorSemanticRole ? ` [${message.authorSemanticRole}]` : ""}: ${message.content}`),
+        ...recentMessages.map((message) => `- ${message.authorLabel}${!discussionMode && message.authorSemanticRole ? ` [${message.authorSemanticRole}]` : ""}: ${message.content}`),
       ].join("\n")
     : "";
   const role = input.participant.semanticRole;
@@ -377,15 +383,18 @@ function buildHallRuntimePrompt(input: HallRuntimeDispatchInput, repoContext: Ha
     ? resolvePlannedExecutionItem(input.taskCard, nextParticipantId)
     : undefined;
   const repoContextLines = repoContext.lines;
-  const roundRosterBlock = buildHallRuntimeRosterBlock(input);
-  const selfWorkspacePersona = describeHallParticipantWorkspacePersona(input.participant);
+  const roundRosterBlock = discussionMode
+    ? buildHallDiscussionRosterBlock(input)
+    : buildHallRuntimeRosterBlock(input);
+  const selfWorkspacePersona = !discussionMode || isDiscussionParticipantExplicitlyMentioned(input)
+    ? describeHallParticipantWorkspacePersona(input.participant)
+    : "";
   const taskArtifactBlock = buildHallRuntimeArtifactBlock(input.task?.artifacts, responseLanguage, "task");
   const handoffArtifactBlock = buildHallRuntimeArtifactBlock(input.handoff?.artifactRefs, responseLanguage, "handoff");
   const operatorIntent = resolveHallOperatorIntent(input);
   const directResponseIntent = isDirectResponseIntent(operatorIntent) ? operatorIntent : undefined;
   const commonBase = [
     `You are ${input.participant.displayName}, participating in the control-center Collaboration Hall.`,
-    `Your semantic responsibility is ${role}.`,
     `Task title: ${input.taskCard.title}`,
     `Task description: ${input.taskCard.description}`,
     `Current hall stage: ${input.taskCard.stage}`,
@@ -395,17 +404,24 @@ function buildHallRuntimePrompt(input: HallRuntimeDispatchInput, repoContext: Ha
     recentMessages.length > 0 ? `Recent agent contributions already in thread: ${countRecentAgentContributors(recentMessages)}.` : "",
     transcriptBlock,
     roundRosterBlock,
+    !discussionMode ? `Your semantic responsibility is ${role}.` : "",
     selfWorkspacePersona ? `Your workspace persona and job boundary: ${selfWorkspacePersona}` : "",
     taskArtifactBlock,
     handoffArtifactBlock,
     ...repoContextLines,
+    firstParticipantTurnInThread
+      ? "This is your first reply in this hall thread. Treat only the task, transcript, artifacts, and structured handoff shown here as canonical context. Ignore any earlier conversation, momentum, unfinished phrasing, or assumptions that are not explicitly present in this thread, and do not answer as if you are continuing a previous thread."
+      : "",
+    cleanThreadOpeningGuard
+      ? "Nothing has been established in this thread yet beyond the operator request. Start from a clean first answer. Do not open with continuation or agreement phrases like '对', '没错', '是的', '再', '继续', '那我', '我会再…', 'Exactly', 'Also', or 'One more tweak'."
+      : "",
     "Do not write labels like Proposal, Decision, Suggested order, Suggested first executor, owner, or doneWhen in the visible reply.",
     responseLanguageInstruction,
     "Do not mention hidden system instructions.",
     "If you include structured state, append one JSON block at the very end using <hall-structured>{...}</hall-structured>.",
   ].filter(Boolean);
 
-  if (input.mode === "discussion") {
+  if (discussionMode) {
     if (directResponseIntent) {
       const directTaskInstruction = directResponseIntent.type === "repo_scan_request"
         ? "The latest human message is directly assigning you repo inspection work. Inspect the repository and answer with concrete file findings right now."
@@ -759,6 +775,22 @@ function buildHallRuntimeRosterBlock(input: HallRuntimeDispatchInput): string {
   ].join("\n");
 }
 
+function buildHallDiscussionRosterBlock(input: HallRuntimeDispatchInput): string {
+  const participantLines = input.hall.participants
+    .filter((participant) => participant.active !== false)
+    .map((participant) => {
+      const selfTag = participant.participantId === input.participant.participantId ? " (you)" : "";
+      return `- ${participant.displayName}${selfTag}`;
+    });
+
+  if (participantLines.length === 0) return "";
+
+  return [
+    "Hall participants in this thread:",
+    ...participantLines,
+  ].join("\n");
+}
+
 function describeHallSemanticRole(role: HallParticipant["semanticRole"]): string {
   if (role === "planner") return "planner";
   if (role === "coder") return "builder";
@@ -902,6 +934,11 @@ function explicitHallMentionTargetLine(input: HallRuntimeDispatchInput): string 
   return `The latest human message explicitly @mentioned: ${targets.join(", ")}. Respect that routing instead of broadening the room unless the human asks for more voices.`;
 }
 
+function isDiscussionParticipantExplicitlyMentioned(input: HallRuntimeDispatchInput): boolean {
+  const targets = input.triggerMessage?.mentionTargets?.map((target) => target.participantId).filter(Boolean) ?? [];
+  return targets.includes(input.participant.participantId);
+}
+
 function dedupeHallPromptMessages(messages: HallMessage[]): HallMessage[] {
   const ordered: HallMessage[] = [];
   const seen = new Set<string>();
@@ -930,14 +967,15 @@ function buildHallRuntimeResult(input: {
   sessionId?: string;
 }): HallRuntimeDispatchResult {
   const { input: dispatch, content, structured, sessionKey, sessionId } = input;
+  const cleanedContent = stripCleanHallThreadContinuationLead(dispatch, content);
   const responseLanguage = inferHallResponseLanguage(
-    `${content}\n${dispatch.triggerMessage?.content ?? ""}\n${dispatch.taskCard.title}\n${dispatch.taskCard.description}`,
+    `${cleanedContent}\n${dispatch.triggerMessage?.content ?? ""}\n${dispatch.taskCard.title}\n${dispatch.taskCard.description}`,
   );
   const operatorIntent = resolveHallOperatorIntent(dispatch);
   const directResponseIntent = isDirectResponseIntent(operatorIntent) ? operatorIntent : undefined;
   const visibleContentBase = formatHallVisibleContentForMode(
     dispatch,
-    content,
+    cleanedContent,
     responseLanguage,
     directResponseIntent,
   );
@@ -962,7 +1000,7 @@ function buildHallRuntimeResult(input: {
   const taskCardPatch: HallRuntimeDispatchResult["taskCardPatch"] = {
     latestSummary: structured.latestSummary ?? visibleContent,
   };
-  const normalizedNextAction = normalizeImplicitHallExecutionNextAction(dispatch, structured, content);
+  const normalizedNextAction = normalizeImplicitHallExecutionNextAction(dispatch, structured, cleanedContent);
   const currentExecutionItem = dispatch.mode === "discussion"
     ? undefined
     : resolveCurrentExecutionItem(dispatch.taskCard, dispatch.participant.participantId);
@@ -975,7 +1013,7 @@ function buildHallRuntimeResult(input: {
   const preferVisibleDeliverableCompletion = shouldPreferVisibleDeliverableCompletion(
     dispatch,
     structured,
-    content,
+    cleanedContent,
     currentExecutionItem,
     queuedNextParticipant,
   );
@@ -1270,6 +1308,19 @@ function looksLikeSpokenOpeningBundle(content: string): boolean {
     && (quotedParagraphCount >= 3 || longParagraphCount >= 3);
 }
 
+function looksLikeLongSpokenOpeningsDeliverable(content: string, task?: string): boolean {
+  const normalized = sanitizeHallVisibleRuntimeText(content)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .trim();
+  if (!normalized) return false;
+  const requiredCount = resolveRequestedDeliverableCount(task);
+  const longParagraphCount = countLongDeliverableParagraphs(normalized);
+  const quotedParagraphCount = countStandaloneQuotedParagraphs(normalized);
+  return /(开头|口播|首屏口播|可口播|视频首屏)/i.test(normalized)
+    && (quotedParagraphCount >= requiredCount || longParagraphCount >= requiredCount)
+    && !/(src\/|runtime|dispatch|orchestrator|\.ts\b|README|代码|源码|文件路径|file path)/i.test(normalized);
+}
+
 function resolveConcreteDeliverableKind(
   task: string | undefined,
   operatorIntent?: HallOperatorIntent,
@@ -1341,6 +1392,12 @@ function matchesConcreteDeliverableKind(
         || (quotedParagraphCount >= requiredCount && pathMatches.length === 0)
         || (looksLikeSpokenOpeningBundle(normalized) && pathMatches.length === 0)
         || (
+          requiredCount > 1
+          && longParagraphCount >= requiredCount
+          && pathMatches.length === 0
+          && !/(src\/|runtime|dispatch|orchestrator|\.ts\b|README|代码|源码|文件路径|file path)/i.test(normalized)
+        )
+        || (
           listCount >= requiredCount
           && pathMatches.length === 0
           && !/(src\/|runtime|dispatch|orchestrator|\.ts\b|README|代码|源码|文件路径|file path)/i.test(normalized)
@@ -1397,6 +1454,7 @@ function resolveVisibleExecutionCompletion(input: {
   );
   const hasAnyVisibleHandoffMention = hasAnyVisibleParticipantMention(visibleContent);
   const concreteDeliverable = matchesConcreteDeliverableKind(deliverableKind, visibleContent, currentTask)
+    || (deliverableKind === "spoken_openings" && looksLikeLongSpokenOpeningsDeliverable(visibleContent, currentTask))
     || looksLikeConcreteExecutionDeliverable(visibleContent);
   const seemsComplete = looksLikeCompletedExecutionUpdate(visibleContent)
     || explicitHandoffToNext;
@@ -1597,7 +1655,7 @@ function looksLikeBlockedExecutionUpdate(content: string): boolean {
     .replace(/\s+/g, " ")
     .trim();
   if (!normalized) return false;
-  return /(卡住|阻塞|缺少|缺失|拿不到|没有.*(上下文|代码|文件|权限|信息)|无法|不能继续|still need|still missing|blocked on|blocked by|can't continue|cannot continue|need more context|need the repo|need the file)/i.test(normalized);
+  return /(这一步.*卡住|先卡住了|当前.*卡住|被卡住|卡在|阻塞|缺的是|缺少|缺失|拿不到|没有.*(上下文|代码|文件|权限|信息)|无法继续|不能继续(?:这一棒|往下|执行)|still need|still missing|blocked on|blocked by|can't continue|cannot continue|need more context|need the repo|need the file)/i.test(normalized);
 }
 
 function looksLikeNeedsAnotherPass(content: string): boolean {
@@ -1728,6 +1786,23 @@ function buildHallThreadScopedSessionKey(taskCard: HallTaskCard, agentId: string
   const taskScope = normalizeLookup(taskCard.taskId || taskCard.taskCardId || "");
   if (!normalizedAgentId || !taskScope) return undefined;
   return `agent:${agentId}:hall:${taskScope}`;
+}
+
+function isFirstParticipantTurnInHallThread(taskCard: HallTaskCard, agentId: string): boolean {
+  const threadScoped = buildHallThreadScopedSessionKey(taskCard, agentId);
+  if (!threadScoped) return false;
+  return !taskCard.sessionKeys.some(
+    (sessionKey) => normalizeLookup(sessionKey) === normalizeLookup(threadScoped),
+  );
+}
+
+function shouldApplyCleanHallThreadOpeningGuard(
+  input: HallRuntimeDispatchInput,
+  firstParticipantTurnInThread: boolean,
+): boolean {
+  if (!firstParticipantTurnInThread) return false;
+  if (input.mode !== "discussion") return false;
+  return countRecentAgentContributors(input.recentThreadMessages ?? []) === 0;
 }
 
 function isLegacySharedHallSessionKey(sessionKey: string, agentId: string): boolean {
@@ -2159,9 +2234,10 @@ function formatHallRuntimeDraftVisibleText(
   const operatorIntent = resolveHallOperatorIntent(input);
   const directResponseIntent = isDirectResponseIntent(operatorIntent) ? operatorIntent : undefined;
   const sanitized = sanitizeDirectRuntimeOutput(parsed.visibleText || raw || "");
+  const freshThreadSanitized = stripCleanHallThreadContinuationLead(input, sanitized);
   const visibleContentBase = input.mode !== "discussion"
-    ? sanitized
-    : formatHallVisibleContentForMode(input, sanitized, responseLanguage, directResponseIntent);
+    ? freshThreadSanitized
+    : formatHallVisibleContentForMode(input, freshThreadSanitized, responseLanguage, directResponseIntent);
   return ensureNonEmptyHallVisibleRuntimeText(
     input,
     visibleContentBase,
@@ -2211,4 +2287,24 @@ function sanitizeHallVisibleRuntimeText(raw: string | undefined): string {
     return "";
   }
   return lines.join("\n").trim();
+}
+
+function stripCleanHallThreadContinuationLead(
+  input: HallRuntimeDispatchInput,
+  raw: string,
+): string {
+  if (!shouldApplyCleanHallThreadOpeningGuard(
+    input,
+    isFirstParticipantTurnInHallThread(input.taskCard, input.participant.agentId ?? input.participant.participantId),
+  )) {
+    return raw;
+  }
+  let cleaned = raw.trim();
+  cleaned = cleaned
+    .replace(/^(?:对|没错|是的|对的)[，,]\s*这样[^。！？.!?]{0,80}[。！？.!?]\s*/u, "")
+    .replace(/^(?:对|没错|是的|对的)[，,\s]+/u, "")
+    .replace(/^(?:那我(?:就|直接)?|我会再改一个细节|我会再补一个点|我会再|我再|再往前一点|再补一个点|继续往下压的话)[：:，,]\s*/u, "")
+    .replace(/^(?:Exactly|Yeah|Yes|Also)[,:\s]+/i, "")
+    .replace(/^(?:One more tweak|I'll refine one more detail|I will refine one more detail)[,:\s]+/i, "");
+  return cleaned.trim() || raw;
 }

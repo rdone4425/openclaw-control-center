@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { compactHallCoworkerReply, compactHallDiscussionReply, dispatchHallRuntimeTurn, enforceConcreteDeliverableReply, summarizeWorkspacePersonaFromFiles } from "../src/runtime/hall-runtime-dispatch";
 
+const OPENCLAW_HOME = join(process.env.HOME ?? "", ".openclaw");
+const OPENCLAW_WORKSPACE = join(OPENCLAW_HOME, "workspace");
+const MONKEY_WORKSPACE = join(OPENCLAW_WORKSPACE, "agents", "monkey");
+const PANDAS_WORKSPACE = join(OPENCLAW_WORKSPACE, "agents", "pandas");
+const COQ_WORKSPACE = join(OPENCLAW_WORKSPACE, "agents", "coq");
+const THUMBNAIL_HALL_1_URL = pathToFileURL(join(OPENCLAW_WORKSPACE, "thumbnail-hall-1.html")).toString();
+const THUMBNAIL_HALL_2_URL = pathToFileURL(join(OPENCLAW_WORKSPACE, "thumbnail-hall-2.html")).toString();
+const THUMBNAIL_HALL_3_URL = pathToFileURL(join(OPENCLAW_WORKSPACE, "thumbnail-hall-3.html")).toString();
+const THUMBNAIL_HOOK_1_URL = pathToFileURL(join(PANDAS_WORKSPACE, "control-center", "tmp", "thumbnail-hook-1.html")).toString();
+
 test("workspace persona summary reuses existing agent files instead of hall-only config", () => {
-  const monkeyPersona = summarizeWorkspacePersonaFromFiles("/Users/tianyi/.openclaw/workspace/agents/monkey");
-  const pandasPersona = summarizeWorkspacePersonaFromFiles("/Users/tianyi/.openclaw/workspace/agents/pandas");
-  const coqPersona = summarizeWorkspacePersonaFromFiles("/Users/tianyi/.openclaw/workspace/agents/coq");
+  const monkeyPersona = summarizeWorkspacePersonaFromFiles(MONKEY_WORKSPACE);
+  const pandasPersona = summarizeWorkspacePersonaFromFiles(PANDAS_WORKSPACE);
+  const coqPersona = summarizeWorkspacePersonaFromFiles(COQ_WORKSPACE);
 
   assert.match(monkeyPersona, /(YouTube|视频转长文|价值提炼器)/);
   assert.match(pandasPersona, /(编码与实现|工程实现|验证驱动)/);
@@ -205,6 +217,244 @@ test("existing thread-scoped runtime sessions are preserved for continuity insid
     [...new Set(observedSessionKeys.filter(Boolean))],
     ["agent:coq:hall:task-789"],
   );
+});
+
+test("brand-new hall thread prompts tell the participant to ignore any unseen earlier thread context", async () => {
+  let capturedPrompt = "";
+  await dispatchHallRuntimeTurn({
+    client: {
+      sessionsHistory: async () => ({ history: [] }),
+      agentRun: async (request: { sessionKey?: string; message: string }) => {
+        capturedPrompt = request.message;
+        return {
+          ok: true,
+          text: "先把第一版要证明的价值锁住。",
+          rawText: "",
+          sessionKey: request.sessionKey,
+        };
+      },
+    } as never,
+    hall: {
+      hallId: "hall",
+      participants: [],
+      updatedAt: new Date().toISOString(),
+    } as never,
+    taskCard: {
+      taskCardId: "card",
+      hallId: "hall",
+      projectId: "project",
+      taskId: "task-321",
+      title: "我想要做一个视频 介绍我的群聊功能",
+      description: "我想要做一个视频 介绍我的群聊功能",
+      stage: "discussion",
+      status: "todo",
+      plannedExecutionOrder: [],
+      plannedExecutionItems: [],
+      mentionedParticipantIds: [],
+      sessionKeys: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as never,
+    participant: {
+      participantId: "coq",
+      agentId: "coq",
+      displayName: "Coq-每日新闻",
+      semanticRole: "planner",
+      aliases: [],
+      active: true,
+    } as never,
+    triggerMessage: {
+      hallId: "hall",
+      messageId: "trigger",
+      kind: "task",
+      authorParticipantId: "operator",
+      authorLabel: "Operator",
+      content: "我想要做一个视频 介绍我的群聊功能",
+      createdAt: new Date().toISOString(),
+    } as never,
+    mode: "discussion",
+  });
+
+  assert.match(capturedPrompt, /This is your first reply in this hall thread/i);
+  assert.match(capturedPrompt, /Ignore any earlier conversation, momentum, unfinished phrasing, or assumptions/i);
+  assert.match(capturedPrompt, /do not answer as if you are continuing a previous thread/i);
+  assert.match(capturedPrompt, /Do not open with continuation or agreement phrases like '对'/i);
+});
+
+test("participants with an existing thread-scoped hall session keep same-thread continuity prompts without the clean-thread reset", async () => {
+  let capturedPrompt = "";
+  await dispatchHallRuntimeTurn({
+    client: {
+      sessionsHistory: async () => ({ history: [] }),
+      agentRun: async (request: { sessionKey?: string; message: string }) => {
+        capturedPrompt = request.message;
+        return {
+          ok: true,
+          text: "继续把第一版的价值往下推。",
+          rawText: "",
+          sessionKey: request.sessionKey,
+        };
+      },
+    } as never,
+    hall: {
+      hallId: "hall",
+      participants: [],
+      updatedAt: new Date().toISOString(),
+    } as never,
+    taskCard: {
+      taskCardId: "card",
+      hallId: "hall",
+      projectId: "project",
+      taskId: "task-654",
+      title: "我想要做一个视频 介绍我的群聊功能",
+      description: "我想要做一个视频 介绍我的群聊功能",
+      stage: "discussion",
+      status: "todo",
+      plannedExecutionOrder: [],
+      plannedExecutionItems: [],
+      mentionedParticipantIds: [],
+      sessionKeys: ["agent:coq:hall:task-654"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as never,
+    participant: {
+      participantId: "coq",
+      agentId: "coq",
+      displayName: "Coq-每日新闻",
+      semanticRole: "planner",
+      aliases: [],
+      active: true,
+    } as never,
+    triggerMessage: {
+      hallId: "hall",
+      messageId: "trigger",
+      kind: "chat",
+      authorParticipantId: "operator",
+      authorLabel: "Operator",
+      content: "继续把第一个版本再收紧一点",
+      createdAt: new Date().toISOString(),
+    } as never,
+    mode: "discussion",
+  });
+
+  assert.doesNotMatch(capturedPrompt, /This is your first reply in this hall thread/i);
+  assert.doesNotMatch(capturedPrompt, /continuing a previous thread/i);
+});
+
+test("a second speaker in the same hall thread still gets a clean first-turn prompt until their own thread session exists", async () => {
+  let capturedPrompt = "";
+  await dispatchHallRuntimeTurn({
+    client: {
+      sessionsHistory: async () => ({ history: [] }),
+      agentRun: async (request: { sessionKey?: string; message: string }) => {
+        capturedPrompt = request.message;
+        return {
+          ok: true,
+          text: "那第一版就拿最小任务样本来演示。",
+          rawText: "",
+          sessionKey: request.sessionKey,
+        };
+      },
+    } as never,
+    hall: {
+      hallId: "hall",
+      participants: [],
+      updatedAt: new Date().toISOString(),
+    } as never,
+    taskCard: {
+      taskCardId: "card",
+      hallId: "hall",
+      projectId: "project",
+      taskId: "task-777",
+      title: "我想要做一个视频 介绍我的群聊功能",
+      description: "我想要做一个视频 介绍我的群聊功能",
+      stage: "discussion",
+      status: "todo",
+      plannedExecutionOrder: [],
+      plannedExecutionItems: [],
+      mentionedParticipantIds: [],
+      sessionKeys: ["agent:coq:hall:task-777"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as never,
+    participant: {
+      participantId: "monkey",
+      agentId: "monkey",
+      displayName: "monkey",
+      semanticRole: "coder",
+      aliases: [],
+      active: true,
+    } as never,
+    triggerMessage: {
+      hallId: "hall",
+      messageId: "trigger",
+      kind: "task",
+      authorParticipantId: "operator",
+      authorLabel: "Operator",
+      content: "我想要做一个视频 介绍我的群聊功能",
+      createdAt: new Date().toISOString(),
+    } as never,
+    mode: "discussion",
+  });
+
+  assert.match(capturedPrompt, /This is your first reply in this hall thread/i);
+  assert.match(capturedPrompt, /do not answer as if you are continuing a previous thread/i);
+});
+
+test("brand-new discussion first replies strip continuation-style openers from the visible content", async () => {
+  const result = await dispatchHallRuntimeTurn({
+    client: {
+      sessionsHistory: async () => ({ history: [] }),
+      agentRun: async (request: { sessionKey?: string }) => ({
+        ok: true,
+        text: "对，这样开头会更狠。<br>第一版先别讲全貌，先让观众一眼看到任务被接住了。",
+        rawText: "",
+        sessionKey: request.sessionKey,
+      }),
+    } as never,
+    hall: {
+      hallId: "hall",
+      participants: [],
+      updatedAt: new Date().toISOString(),
+    } as never,
+    taskCard: {
+      taskCardId: "card",
+      hallId: "hall",
+      projectId: "project",
+      taskId: "task-888",
+      title: "我想要做一个视频 介绍我的群聊功能",
+      description: "我想要做一个视频 介绍我的群聊功能",
+      stage: "discussion",
+      status: "todo",
+      plannedExecutionOrder: [],
+      plannedExecutionItems: [],
+      mentionedParticipantIds: [],
+      sessionKeys: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as never,
+    participant: {
+      participantId: "coq",
+      agentId: "coq",
+      displayName: "Coq-每日新闻",
+      semanticRole: "planner",
+      aliases: [],
+      active: true,
+    } as never,
+    triggerMessage: {
+      hallId: "hall",
+      messageId: "trigger",
+      kind: "task",
+      authorParticipantId: "operator",
+      authorLabel: "Operator",
+      content: "我想要做一个视频 介绍我的群聊功能",
+      createdAt: new Date().toISOString(),
+    } as never,
+    mode: "discussion",
+  });
+
+  assert.doesNotMatch(result.content, /^对[，,\s]/u);
+  assert.match(result.content, /第一版先别讲全貌/);
 });
 
 test("coworker reply compaction strips memo tone and keeps the handoff", () => {
@@ -1084,6 +1334,86 @@ test("long spoken openings plus an explicit handoff still win over hidden blocke
   assert.equal(result.taskCardPatch?.requiresInputFrom, undefined);
 });
 
+test("long spoken openings that end in review still win over hidden blocked structured state", async () => {
+  const result = await dispatchHallRuntimeTurn({
+    client: {
+      agentRun: async () => ({
+        ok: true,
+        text: [
+          "这 3 个开头我直接给你可口播版：",
+          "“很多 AI 产品看起来很聪明，但真正做事的时候还是会卡住。因为它只能陪你聊天，不能替你把事情往前推。我做这个群聊功能，最核心的不是让多个 agent 一起说话，而是让一个任务进来之后，系统直接帮你把讨论收成明确下一步，然后继续推进到执行。”",
+          "“我后来越来越不满意一类 AI 产品，就是它什么都能回答，但什么都推不动。你聊了半天，最后还是得你自己来决定谁做，怎么做，先做哪一步。所以我做了这个群聊功能。它最重要的不是把多个 agent 放进同一个房间，而是把一个任务从模糊讨论，直接推进成明确 owner，明确 next action，然后进入执行状态。”",
+          "“如果 AI 群聊只是让几个 agent 一起发消息，那它其实没比普通聊天强多少。真正有价值的是，这个群聊能不能帮你省掉最后那一下协调。也就是不用你再自己收尾，不用你再自己判断谁接手，系统就已经把任务整理成下一步了。这就是我做这个功能的核心：表面上是群聊，本质上是任务推进器。”",
+          "现在请老板评审。",
+          '<hall-structured>{"nextAction":"blocked","blockers":["still need related info"],"requiresInputFrom":["main"]}</hall-structured>',
+        ].join("\n"),
+        rawText: "",
+      }),
+    } as never,
+    hall: {
+      hallId: "hall",
+      participants: [
+        {
+          participantId: "monkey",
+          displayName: "monkey",
+          semanticRole: "coder",
+          aliases: [],
+          active: true,
+        },
+        {
+          participantId: "main",
+          displayName: "main",
+          semanticRole: "manager",
+          aliases: [],
+          active: true,
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    } as never,
+    taskCard: {
+      taskCardId: "card",
+      hallId: "hall",
+      projectId: "project",
+      taskId: "task",
+      title: "我想要做一个视频 介绍我的群聊功能",
+      description: "我想要做一个视频 介绍我的群聊功能",
+      stage: "execution",
+      status: "in_progress",
+      currentOwnerParticipantId: "monkey",
+      currentOwnerLabel: "monkey",
+      doneWhen: "三个不同的视频开头",
+      plannedExecutionOrder: [],
+      plannedExecutionItems: [],
+      currentExecutionItem: {
+        itemId: "draft-monkey",
+        participantId: "monkey",
+        task: "给我三个不同的视频开头",
+        handoffToParticipantId: "main",
+        handoffWhen: "三个不同的视频开头",
+      },
+      blockers: [],
+      requiresInputFrom: [],
+      mentionedParticipantIds: [],
+      sessionKeys: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as never,
+    participant: {
+      participantId: "monkey",
+      displayName: "monkey",
+      semanticRole: "coder",
+      aliases: [],
+      active: true,
+    } as never,
+    mode: "execution",
+  });
+
+  assert.match(result.content, /这 3 个开头我直接给你可口播版/);
+  assert.equal(result.chainDirective?.nextAction, "handoff");
+  assert.equal(result.taskCardPatch?.blockers, undefined);
+  assert.equal(result.taskCardPatch?.requiresInputFrom, undefined);
+});
+
 test("execution does not accept the wrong deliverable type just because it is concrete", async () => {
   const result = await dispatchHallRuntimeTurn({
     client: {
@@ -1091,9 +1421,9 @@ test("execution does not accept the wrong deliverable type just because it is co
         ok: true,
         text: [
           "三个网页 thumbnail 我先给到这：",
-          "file:///Users/tianyi/.openclaw/workspace/thumbnail-hall-1.html",
-          "file:///Users/tianyi/.openclaw/workspace/thumbnail-hall-2.html",
-          "file:///Users/tianyi/.openclaw/workspace/thumbnail-hall-3.html",
+          THUMBNAIL_HALL_1_URL,
+          THUMBNAIL_HALL_2_URL,
+          THUMBNAIL_HALL_3_URL,
           "@Coq-每日新闻 你接着看这三张的标题和文案力度，帮我挑最适合视频首屏的一版。",
         ].join("\n"),
         rawText: "",
@@ -1550,7 +1880,7 @@ test("explicit artifact optimization asks with file URLs stay direct deliverable
       kind: "chat",
       authorParticipantId: "operator",
       authorLabel: "Operator",
-      content: "@Coq-每日新闻 我喜欢第一个 file:///Users/tianyi/.openclaw/workspace/agents/pandas/control-center/tmp/thumbnail-hook-1.html 但是你再优化一下吧 字太多了 然后加一些图",
+      content: `@Coq-每日新闻 我喜欢第一个 ${THUMBNAIL_HOOK_1_URL} 但是你再优化一下吧 字太多了 然后加一些图`,
       targetParticipantIds: ["coq"],
       mentionTargets: [{ participantId: "coq" }],
       createdAt: new Date().toISOString(),
@@ -1655,9 +1985,88 @@ test("discussion prompt stays minimal instead of forcing role choreography or fo
   assert.match(capturedPrompt, /This is discussion only\. Do not start execution yet\./i);
   assert.match(capturedPrompt, /Answer the latest human message directly\./i);
   assert.match(capturedPrompt, /Detailed answers are allowed\./i);
+  assert.doesNotMatch(capturedPrompt, /Your semantic responsibility is/i);
+  assert.doesNotMatch(capturedPrompt, /role:\s*(planner|builder|reviewer|manager|generalist)/i);
+  assert.doesNotMatch(capturedPrompt, /persona:/i);
+  assert.doesNotMatch(capturedPrompt, /this round:/i);
+  assert.doesNotMatch(capturedPrompt, /Your workspace persona and job boundary:/i);
   assert.doesNotMatch(capturedPrompt, /Start by acknowledging that exact point/i);
   assert.doesNotMatch(capturedPrompt, /push it one step further/i);
   assert.doesNotMatch(capturedPrompt, /Add only the missing delta/i);
   assert.doesNotMatch(capturedPrompt, /briefly acknowledging/i);
   assert.doesNotMatch(capturedPrompt, /one short clause/i);
+});
+
+test("discussion prompt only injects workspace persona when the participant is explicitly @mentioned", async () => {
+  let capturedPrompt = "";
+  await dispatchHallRuntimeTurn({
+    client: {
+      agentRun: async (request: { message: string }) => {
+        capturedPrompt = request.message;
+        return {
+          ok: true,
+          text: "我会直接按你的反馈改第一张。",
+          rawText: "",
+        };
+      },
+    } as never,
+    hall: {
+      hallId: "hall",
+      participants: [
+        {
+          participantId: "coq",
+          displayName: "Coq-每日新闻",
+          semanticRole: "planner",
+          aliases: [],
+          active: true,
+        },
+        {
+          participantId: "monkey",
+          displayName: "monkey",
+          semanticRole: "coder",
+          aliases: [],
+          active: true,
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    } as never,
+    taskCard: {
+      taskCardId: "card",
+      hallId: "hall",
+      projectId: "project",
+      taskId: "task",
+      title: "我想要做一个视频 介绍我的群聊功能",
+      description: "我想要做一个视频 介绍我的群聊功能",
+      stage: "discussion",
+      status: "todo",
+      plannedExecutionOrder: [],
+      plannedExecutionItems: [],
+      mentionedParticipantIds: ["coq"],
+      sessionKeys: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as never,
+    participant: {
+      participantId: "coq",
+      displayName: "Coq-每日新闻",
+      semanticRole: "planner",
+      aliases: [],
+      active: true,
+    } as never,
+    triggerMessage: {
+      hallId: "hall",
+      messageId: "trigger",
+      kind: "chat",
+      authorParticipantId: "operator",
+      authorLabel: "Operator",
+      content: "@Coq-每日新闻 帮我把第一个版本再优化一下",
+      targetParticipantIds: ["coq"],
+      mentionTargets: [{ participantId: "coq" }],
+      createdAt: new Date().toISOString(),
+    } as never,
+    mode: "discussion",
+  });
+
+  assert.match(capturedPrompt, /Your workspace persona and job boundary:/i);
+  assert.doesNotMatch(capturedPrompt, /Your semantic responsibility is/i);
 });

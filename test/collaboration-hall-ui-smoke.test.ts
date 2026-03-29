@@ -64,6 +64,8 @@ test("collaboration hall renders a three-pane hall-first shell", () => {
   assert(script.includes("markdownImagePattern"));
   assert(script.includes("hall-md-image"));
   assert(html.includes("hall-md-img"));
+  assert(script.includes("const hasDiscussionOutcome = Boolean("));
+  assert(script.includes("|| hasDiscussionOutcome"));
   assert(script.includes("compositionstart"));
   assert(script.includes("pendingComposerSubmitAfterComposition"));
   assert(script.includes("compositionend"));
@@ -258,6 +260,142 @@ test("review-stage hall cards with a queued next round still render a start-exec
   assert(html.includes("开始执行（"));
   assert(!html.includes("更换当前执行者"));
   assert(html.includes("data-hall-start-execution"));
+});
+
+test("discussion-stage proposals still render the bottom decision console actions", () => {
+  const html = renderCollaborationHall({
+    language: "zh",
+    hall: {
+      hallId: "main",
+      title: "Collaboration Hall",
+      participants: [
+        { participantId: "coq", agentId: "coq", displayName: "Coq", semanticRole: "planner", active: true, aliases: ["Coq"] },
+        { participantId: "monkey", agentId: "monkey", displayName: "Monkey", semanticRole: "coder", active: true, aliases: ["Monkey"] },
+      ],
+      taskCardIds: ["demo"],
+      messageIds: ["coq-1", "monkey-1"],
+      lastMessageId: "monkey-1",
+      latestMessageAt: "2026-03-29T17:00:00.000Z",
+      createdAt: "2026-03-29T16:58:00.000Z",
+      updatedAt: "2026-03-29T17:00:00.000Z",
+    },
+    hallSummary: {
+      hallId: "main",
+      headline: "The discussion settled on a concrete first slice.",
+      activeTaskCount: 1,
+      waitingReviewCount: 0,
+      blockedTaskCount: 0,
+      currentSpeakerLabel: "Monkey",
+      updatedAt: "2026-03-29T17:00:00.000Z",
+    },
+    taskCards: [
+      {
+        card: {
+          hallId: "main",
+          taskCardId: "demo",
+          projectId: "collaboration-hall",
+          taskId: "demo-task",
+          roomId: "collaboration-hall:demo-task",
+          title: "Introduce the hall with a short video",
+          description: "Show the moment when the task gets picked up.",
+          stage: "discussion",
+          status: "in_progress",
+          createdByParticipantId: "operator",
+          proposal: "Open on a small task entering the hall, then land on owner and next action.",
+          latestSummary: "Open on a small task entering the hall, then land on owner and next action.",
+          blockers: [],
+          requiresInputFrom: [],
+          mentionedParticipantIds: [],
+          sessionKeys: [],
+          discussionCycle: {
+            participantIds: ["coq", "monkey"],
+            completedParticipantIds: ["coq", "monkey"],
+          },
+          createdAt: "2026-03-29T16:58:00.000Z",
+          updatedAt: "2026-03-29T17:00:00.000Z",
+        },
+        summary: {
+          taskCardId: "demo",
+          projectId: "collaboration-hall",
+          taskId: "demo-task",
+          headline: "Open on a small task entering the hall, then land on owner and next action.",
+          currentOwnerLabel: "",
+          nextAction: "Plan the execution order for the first concrete deliverable.",
+          stage: "discussion",
+          blockerCount: 0,
+          updatedAt: "2026-03-29T17:00:00.000Z",
+        },
+        task: {
+          projectId: "collaboration-hall",
+          taskId: "demo-task",
+          title: "Introduce the hall with a short video",
+          status: "in_progress",
+          owner: "Operator",
+          roomId: "collaboration-hall:demo-task",
+          definitionOfDone: ["A concrete first cut is chosen"],
+          artifacts: [],
+          rollback: { strategy: "manual", steps: [] },
+          sessionKeys: [],
+          budget: {},
+          updatedAt: "2026-03-29T17:00:00.000Z",
+        },
+      },
+    ],
+    selectedTaskCard: {
+      hallId: "main",
+      taskCardId: "demo",
+      projectId: "collaboration-hall",
+      taskId: "demo-task",
+      roomId: "collaboration-hall:demo-task",
+      title: "Introduce the hall with a short video",
+      description: "Show the moment when the task gets picked up.",
+      stage: "discussion",
+      status: "in_progress",
+      createdByParticipantId: "operator",
+      proposal: "Open on a small task entering the hall, then land on owner and next action.",
+      latestSummary: "Open on a small task entering the hall, then land on owner and next action.",
+      blockers: [],
+      requiresInputFrom: [],
+      mentionedParticipantIds: [],
+      sessionKeys: [],
+      discussionCycle: {
+        participantIds: ["coq", "monkey"],
+        completedParticipantIds: ["coq", "monkey"],
+      },
+      createdAt: "2026-03-29T16:58:00.000Z",
+      updatedAt: "2026-03-29T17:00:00.000Z",
+    },
+    selectedTaskSummary: {
+      taskCardId: "demo",
+      projectId: "collaboration-hall",
+      taskId: "demo-task",
+      headline: "Open on a small task entering the hall, then land on owner and next action.",
+      currentOwnerLabel: "",
+      nextAction: "Plan the execution order for the first concrete deliverable.",
+      stage: "discussion",
+      blockerCount: 0,
+      updatedAt: "2026-03-29T17:00:00.000Z",
+    },
+    selectedTask: {
+      projectId: "collaboration-hall",
+      taskId: "demo-task",
+      title: "Introduce the hall with a short video",
+      status: "in_progress",
+      owner: "Operator",
+      roomId: "collaboration-hall:demo-task",
+      definitionOfDone: ["A concrete first cut is chosen"],
+      artifacts: [],
+      rollback: { strategy: "manual", steps: [] },
+      sessionKeys: [],
+      budget: {},
+      updatedAt: "2026-03-29T17:00:00.000Z",
+    },
+    messages: [],
+  });
+
+  assert(html.includes("讨论结论"));
+  assert(html.includes("data-hall-plan-order"));
+  assert(html.includes("继续讨论"));
 });
 
 test("selected task renders the current console in the bottom decision panel instead of the message history", () => {

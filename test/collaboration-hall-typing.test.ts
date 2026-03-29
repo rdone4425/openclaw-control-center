@@ -119,7 +119,7 @@ test("hall SSE publishes multi-agent typing lifecycle events", async () => {
   }
 });
 
-test("hall discussion primes multiple typing participants before the first reply completes", async () => {
+test("hall discussion only shows the active speaker typing before the first reply completes", async () => {
   const backups = await backupFiles([
     COLLABORATION_HALLS_PATH,
     COLLABORATION_HALL_MESSAGES_PATH,
@@ -184,7 +184,7 @@ test("hall discussion primes multiple typing participants before the first reply
       .filter((event) => event.type === "draft_start");
     const startAuthors = [...new Set(startsBeforeFirstComplete.map((event) => String(event.authorParticipantId || "")))];
 
-    assert.ok(startAuthors.length >= 2, `Expected at least 2 typing participants before first complete, saw ${startAuthors.join(", ")}`);
+    assert.deepEqual(startAuthors.length, 1, `Expected only the active speaker to type before the first complete, saw ${startAuthors.join(", ")}`);
   } finally {
     if (server.listening) {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));

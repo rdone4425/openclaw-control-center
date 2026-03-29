@@ -741,6 +741,47 @@ test("broad video intro ask no longer defaults the first discussion reply into c
   }
 });
 
+test("video-flavored execution planning no longer injects brief or storyboard jargon into generated execution tasks", async () => {
+  const backups = await backupFiles([
+    COLLABORATION_HALLS_PATH,
+    COLLABORATION_HALL_MESSAGES_PATH,
+    COLLABORATION_TASK_CARDS_PATH,
+    COLLABORATION_HALL_SUMMARIES_PATH,
+    PROJECTS_PATH,
+    TASKS_PATH,
+    CHAT_ROOMS_PATH,
+    CHAT_MESSAGES_PATH,
+  ]);
+
+  try {
+    await resetFiles([
+      COLLABORATION_HALLS_PATH,
+      COLLABORATION_HALL_MESSAGES_PATH,
+      COLLABORATION_TASK_CARDS_PATH,
+      COLLABORATION_HALL_SUMMARIES_PATH,
+      PROJECTS_PATH,
+      TASKS_PATH,
+      CHAT_ROOMS_PATH,
+      CHAT_MESSAGES_PATH,
+    ]);
+    const created = await createHallTaskFromOperatorRequest({
+      content: "我想要做一个视频 介绍我的群聊功能",
+    });
+    assert(created.taskCard);
+
+    const updated = await setHallTaskExecutionOrder({
+      taskCardId: created.taskCard.taskCardId,
+      participantIds: ["coq", "monkey"],
+    });
+
+    assert.equal(updated.taskCard?.plannedExecutionItems.length, 2);
+    assert.doesNotMatch(updated.taskCard?.plannedExecutionItems[0]?.task ?? "", /brief|样片|分镜|storyboard|motion sample/i);
+    assert.doesNotMatch(updated.taskCard?.plannedExecutionItems[1]?.task ?? "", /brief|样片|分镜|storyboard|motion sample/i);
+  } finally {
+    await restoreFiles(backups);
+  }
+});
+
 test("broad opinion request gets a lead plus one complementary responder but not an automatic manager close", async () => {
   const backups = await backupFiles([
     COLLABORATION_HALLS_PATH,
@@ -1655,9 +1696,12 @@ test("stopping execution clears the current execution item and returns the task 
   ]);
 
   try {
-    const created = await createHallTaskFromOperatorRequest({
-      content: "Create a hall task whose current step should clear when execution is stopped.",
-    });
+    const created = await createHallTaskFromOperatorRequest(
+      {
+        content: "Create a hall task whose current step should clear when execution is stopped.",
+      },
+      { skipDiscussion: true },
+    );
     assert(created.taskCard);
 
     await setHallTaskExecutionOrder({
@@ -2746,8 +2790,9 @@ test("runtime-backed hall discussion defaults to two distinct agent replies when
     const runtimeCalls = client.agentRunStreamCalls.length > 0 ? client.agentRunStreamCalls : client.agentRunCalls;
     assert.equal(runtimeCalls.length >= 2, true);
     assert.match(runtimeCalls[1]!.message, /Recent shared thread transcript \(oldest -> newest\):/i);
-    assert.match(runtimeCalls[1]!.message, /Coq-每日新闻 \[planner\]: 先把成功标准锁成一句能复述的话。/i);
+    assert.match(runtimeCalls[1]!.message, /Coq-每日新闻: 先把成功标准锁成一句能复述的话。/i);
     assert.match(runtimeCalls[1]!.message, /Answer the latest human message directly\./i);
+    assert.doesNotMatch(runtimeCalls[1]!.message, /Your semantic responsibility is/i);
   } finally {
     await restoreFiles(backups);
   }

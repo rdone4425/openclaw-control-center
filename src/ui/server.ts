@@ -925,6 +925,41 @@ interface StartUiServerOptions {
   localApiToken?: string;
 }
 
+function resolveUiBindAddress(input: { explicitBindAddress?: string; publicUiUrl?: string }): string {
+  const explicit = input.explicitBindAddress?.trim();
+  if (explicit) return explicit;
+  const publicUrl = parsePublicUiUrl(input.publicUiUrl);
+  if (!publicUrl) return "127.0.0.1";
+  return isLoopbackHostname(publicUrl.hostname) ? "127.0.0.1" : "0.0.0.0";
+}
+
+function resolveUiDisplayUrl(port: number, bindAddress: string, publicUiUrl?: string): string {
+  const publicUrl = parsePublicUiUrl(publicUiUrl);
+  if (publicUrl) return publicUrl.toString();
+  return bindAddress === "0.0.0.0" ? `http://<your-ip>:${port}` : `http://${bindAddress}:${port}`;
+}
+
+function parsePublicUiUrl(raw: string | undefined): URL | undefined {
+  if (!raw?.trim()) return undefined;
+  try {
+    return new URL(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+}
+
+export function resolveUiBindAddressForSmoke(input: {
+  explicitBindAddress?: string;
+  publicUiUrl?: string;
+}): string {
+  return resolveUiBindAddress(input);
+}
+
 export function startUiServer(port: number, toolClient: ToolClient, options: StartUiServerOptions = {}): Server {
   const approvalActions = new ApprovalActionService(toolClient);
   const localTokenGateRequired = options.localTokenAuthRequired ?? LOCAL_TOKEN_AUTH_REQUIRED;
@@ -2766,9 +2801,12 @@ export function startUiServer(port: number, toolClient: ToolClient, options: Sta
     }
   });
 
-  const bindAddress = process.env.UI_BIND_ADDRESS ?? "127.0.0.1";
+  const bindAddress = resolveUiBindAddress({
+    explicitBindAddress: process.env.UI_BIND_ADDRESS,
+    publicUiUrl: OPENCLAW_CONTROL_UI_URL,
+  });
   server.listen(port, bindAddress, () => {
-    const displayUrl = bindAddress === "0.0.0.0" ? `http://<your-ip>:${port}` : `http://${bindAddress}:${port}`;
+    const displayUrl = resolveUiDisplayUrl(port, bindAddress, OPENCLAW_CONTROL_UI_URL);
     console.log(`[mission-control] ui listening at ${displayUrl}`);
     void Promise.resolve().then(() => primeOpenClawCliInsights());
     void primeUiRenderCaches(toolClient);

@@ -1345,25 +1345,17 @@ function buildExecutionItemTask(
   }
   if (participant.semanticRole === "planner") {
     if (language === "zh") {
-      return /video|story|narrative|motion|animation|campaign/.test(lower)
-        ? `先把“${title}”的 brief 钉住：目标受众、核心信息、故事线和第一版样片范围${focus ? `，重点围绕：${focus}` : "。"}`
-        : `先把“${title}”收成一版明确 brief：范围、约束和成功标准${focus ? `，重点围绕：${focus}` : "。"}`
-        ;
+      return `先把“${title}”收成一版明确方向：目标、范围、约束和成功标准${focus ? `，重点围绕：${focus}` : "。"}`
+      ;
     }
-    return /video|story|narrative|motion|animation|campaign/.test(lower)
-      ? `Lock the brief for "${title}": audience, storyline, scope, and the smallest convincing first cut${focus ? `, with special attention to ${focus}` : ""}.`
-      : `Turn "${title}" into a clear brief with scope, constraints, and success criteria${focus ? `, centered on ${focus}` : ""}.`;
+    return `Turn "${title}" into a clear first-pass direction with scope, constraints, and success criteria${focus ? `, centered on ${focus}` : ""}.`;
   }
   if (participant.semanticRole === "coder") {
     if (language === "zh") {
-      return /video|story|narrative|motion|animation/.test(lower)
-        ? `为“${title}”做第一版可评审样片 / storyboard / motion sample，不直接做满${focus ? `，重点落实：${focus}` : "。"}`
-        : `完成“${title}”的第一版执行结果，并把产物贴回群里${focus ? `，重点落实：${focus}` : "。"}`
-        ;
+      return `完成“${title}”的第一版执行结果，并把产物贴回群里${focus ? `，重点落实：${focus}` : "。"}`
+      ;
     }
-    return /video|story|narrative|motion|animation/.test(lower)
-      ? `Build the first executable or video-ready sample for "${title}" so the team can review something concrete${focus ? `, especially ${focus}` : ""}.`
-      : `Deliver the first implementation slice for "${title}" and leave a concrete artifact in the thread${focus ? `, focusing on ${focus}` : ""}.`;
+    return `Deliver the first concrete pass for "${title}" and leave a reviewable artifact in the thread${focus ? `, focusing on ${focus}` : ""}.`;
   }
   if (participant.semanticRole === "reviewer") {
     if (language === "zh") return `只看上一位交付的结果，指出必须改的一点；没硬 blocker 就直接交给下一位${focus ? `，重点盯：${focus}` : "。"}`
@@ -2306,65 +2298,11 @@ async function runHallDiscussion(
   const context = await ensureHallContext();
   let taskCard = await requireTaskCard(taskCardId);
   const generatedMessages: HallMessage[] = [];
-  const presenceDrafts = new Map<string, string>();
   const explicitTargets = [...new Set((options.explicitTargetParticipantIds ?? []).filter(Boolean))];
   const taskStore = await loadTaskStore();
   const task = taskStore.tasks.find((item) => item.projectId === taskCard.projectId && item.taskId === taskCard.taskId);
   let currentTriggerMessage = options.triggerMessage;
   let cycleTriggerMessage = options.triggerMessage;
-
-  const abortPresenceDraft = (participantId: string | undefined, reason: string) => {
-    if (!participantId) return;
-    const draftId = presenceDrafts.get(participantId);
-    if (!draftId) return;
-    abortHallDraftReply({
-      hallId: context.hall.hallId,
-      taskCardId: taskCard.taskCardId,
-      projectId: taskCard.projectId,
-      taskId: taskCard.taskId,
-      roomId: taskCard.roomId,
-      draftId,
-      reason,
-    });
-    presenceDrafts.delete(participantId);
-  };
-
-  const primeUpcomingDiscussionPresence = (
-    currentParticipantId: string | undefined,
-    plannedParticipantIds?: string[],
-  ) => {
-    const sourceParticipantIds = plannedParticipantIds && plannedParticipantIds.length > 0
-      ? plannedParticipantIds
-      : taskCard.discussionCycle?.expectedParticipantIds ?? [];
-    const futureParticipants = sourceParticipantIds
-      .filter((participantId) => participantId !== currentParticipantId)
-      .filter((participantId) => !taskCard.discussionCycle?.completedParticipantIds.includes(participantId))
-      .slice(0, 2);
-    for (const participantId of futureParticipants) {
-      if (presenceDrafts.has(participantId)) continue;
-      const participant = findParticipant(context.hall.participants, participantId);
-      if (!participant) continue;
-      const draftId = beginHallDraftReply({
-        hallId: context.hall.hallId,
-        taskCardId: taskCard.taskCardId,
-        projectId: taskCard.projectId,
-        taskId: taskCard.taskId,
-        roomId: taskCard.roomId,
-        authorParticipantId: participant.participantId,
-        authorLabel: participant.displayName,
-        authorSemanticRole: participant.semanticRole,
-        messageKind: participant.semanticRole === "manager" ? "decision" : "proposal",
-        content: "",
-      });
-      presenceDrafts.set(participantId, draftId);
-    }
-  };
-
-  const clearAllPresenceDrafts = (reason: string) => {
-    for (const participantId of [...presenceDrafts.keys()]) {
-      abortPresenceDraft(participantId, reason);
-    }
-  };
 
   try {
     if (taskCard.stage !== "discussion") {
@@ -2433,13 +2371,6 @@ async function runHallDiscussion(
       if (!participantId) break;
       const participant = findParticipant(context.hall.participants, participantId);
       if (!participant) continue;
-      abortPresenceDraft(participant.participantId, "discussion_turn_started");
-      primeUpcomingDiscussionPresence(
-        participant.participantId,
-        explicitQueue.length > 0
-          ? explicitQueue.filter((queuedParticipantId) => !spokenParticipantIds.has(queuedParticipantId))
-          : undefined,
-      );
       const created = await appendGeneratedHallReply(
         context.hall,
         taskCard,
@@ -2471,7 +2402,7 @@ async function runHallDiscussion(
       generatedMessages,
     };
   } finally {
-    clearAllPresenceDrafts("discussion_cycle_finished");
+    // Discussion typing now reflects only real in-flight runtime drafts.
   }
 }
 
