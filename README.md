@@ -189,7 +189,7 @@ Notes:
 
 ## Quick start
 
-### Option 1: Docker (Recommended)
+### Docker (Recommended)
 One-command installation:
 
 ```bash
@@ -200,15 +200,16 @@ irm https://raw.githubusercontent.com/rdone4425/openclaw-control-center/main/ins
 curl -fsSL https://raw.githubusercontent.com/rdone4425/openclaw-control-center/main/install.sh | bash
 ```
 
-Or use docker-compose:
+Or manually:
 
 ```bash
-git clone https://github.com/rdone4425/openclaw-control-center.git
-cd openclaw-control-center
-docker compose up -d
+docker pull ghcr.io/rdone4425/openclaw-control-center:latest
+docker run -d --name openclaw-control-center -p 4310:4310 ghcr.io/rdone4425/openclaw-control-center:latest
 ```
 
 Then open http://localhost:4310
+
+> Note: OpenClaw Gateway (port 18789) needs to be running on the host machine separately.
 
 ### Option 2: Local Development
 1. `npm install`

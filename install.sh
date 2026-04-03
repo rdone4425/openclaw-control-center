@@ -7,7 +7,6 @@ set -e
 IMAGE_NAME="ghcr.io/rdone4425/openclaw-control-center"
 CONTAINER_NAME="openclaw-control-center"
 PORT_UI=4310
-PORT_GATEWAY=18789
 
 # 颜色定义
 RED='\033[0;31m'
@@ -40,14 +39,6 @@ docker pull ${IMAGE_NAME}:latest
 echo -e "${GREEN}✓ 镜像拉取完成${NC}"
 echo
 
-# 创建必要目录
-echo -e "${YELLOW}创建数据目录...${NC}"
-mkdir -p ~/.openclaw
-mkdir -p ~/.openclaw/workspace
-mkdir -p ~/.codex
-echo -e "${GREEN}✓ 目录创建完成${NC}"
-echo
-
 # 停止并删除旧容器
 echo -e "${YELLOW}清理旧容器...${NC}"
 docker rm -f ${CONTAINER_NAME} 2>/dev/null || true
@@ -58,7 +49,6 @@ echo -e "${YELLOW}启动容器...${NC}"
 docker run -d \
     --name ${CONTAINER_NAME} \
     -p ${PORT_UI}:${PORT_UI} \
-    -p ${PORT_GATEWAY}:${PORT_GATEWAY} \
     -e NODE_ENV=production \
     -e UI_MODE=true \
     -e UI_PORT=${PORT_UI} \
@@ -67,13 +57,10 @@ docker run -d \
     -e LOCAL_TOKEN_AUTH_REQUIRED=true \
     -e LOCAL_API_TOKEN=change-this-token \
     -e GATEWAY_URL=host.docker.internal:18789 \
-    -e OPENCLAW_HOME=/data/.openclaw \
-    -e OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json \
-    -e OPENCLAW_WORKSPACE_ROOT=/data/workspace \
-    -e CODEX_HOME=/data/.codex \
-    -v openclaw-home:/data/.openclaw \
-    -v openclaw-workspace:/data/workspace \
-    -v codex-home:/data/.codex \
+    -e OPENCLAW_HOME=/root/.openclaw \
+    -e OPENCLAW_CONFIG_PATH=/root/.openclaw/openclaw.json \
+    -e OPENCLAW_WORKSPACE_ROOT=/root/.openclaw/workspace \
+    -e CODEX_HOME=/root/.codex \
     --add-host=host.docker.internal:host-gateway \
     ${IMAGE_NAME}:latest
 
@@ -84,7 +71,8 @@ echo -e "${GREEN}========================================${NC}"
 echo
 echo -e "访问地址:"
 echo -e "  • Control Center: ${BLUE}http://localhost:${PORT_UI}${NC}"
-echo -e "  • OpenClaw Gateway: ${BLUE}ws://localhost:${PORT_GATEWAY}${NC}"
+echo
+echo -e "注意: OpenClaw Gateway 端口 18789 需要在宿主机手动启动"
 echo
 echo -e "常用命令:"
 echo -e "  • 查看日志: ${YELLOW}docker logs -f ${CONTAINER_NAME}${NC}"
