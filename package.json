@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
+    "start": "node dist/index.js",
     "dev": "node --import tsx src/index.ts",
     "dev:continuous": "cross-env MONITOR_CONTINUOUS=true node --import tsx src/index.ts",
     "dev:ui": "cross-env UI_MODE=true node --import tsx src/index.ts",
