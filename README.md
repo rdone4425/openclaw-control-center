@@ -188,6 +188,29 @@ Notes:
 - If you leave `LOCAL_API_TOKEN` unset while the auth gate is enabled, protected writes stay blocked by design.
 
 ## Quick start
+
+### Option 1: Docker (Recommended)
+One-command installation:
+
+```bash
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/rdone4425/openclaw-control-center/main/install.ps1 | iex
+
+# Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/rdone4425/openclaw-control-center/main/install.sh | bash
+```
+
+Or manually:
+
+```bash
+git clone https://github.com/rdone4425/openclaw-control-center.git
+cd openclaw-control-center
+docker compose up --build -d
+```
+
+Then open http://localhost:4310
+
+### Option 2: Local Development
 1. `npm install`
 2. `cp .env.example .env`
 3. Keep safe defaults for the first run; only change `GATEWAY_URL` or path overrides if your OpenClaw setup is non-standard.
