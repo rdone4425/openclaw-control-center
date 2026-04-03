@@ -200,12 +200,12 @@ irm https://raw.githubusercontent.com/rdone4425/openclaw-control-center/main/ins
 curl -fsSL https://raw.githubusercontent.com/rdone4425/openclaw-control-center/main/install.sh | bash
 ```
 
-Or manually:
+Or use docker-compose:
 
 ```bash
 git clone https://github.com/rdone4425/openclaw-control-center.git
 cd openclaw-control-center
-docker compose up --build -d
+docker compose up -d
 ```
 
 Then open http://localhost:4310

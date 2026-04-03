@@ -2,10 +2,8 @@ version: "3.8"
 
 services:
   control-center:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: openclaw-control-center:local
+    image: ghcr.io/rdone4425/openclaw-control-center:latest
+    container_name: openclaw-control-center
     restart: unless-stopped
     ports:
       - "4310:4310"
@@ -17,17 +15,16 @@ services:
       UI_BIND_ADDRESS: "0.0.0.0"
       READONLY_MODE: "true"
       LOCAL_TOKEN_AUTH_REQUIRED: "true"
-      LOCAL_API_TOKEN: "your-secure-token-change-me"
-      GATEWAY_URL: "ws://host.docker.internal:18789"
-      OPENCLAW_HOME: "/root/.openclaw"
-      OPENCLAW_CONFIG_PATH: "/root/.openclaw/openclaw.json"
-      OPENCLAW_WORKSPACE_ROOT: "/root/.openclaw/workspace"
-      CODEX_HOME: "/root/.codex"
+      LOCAL_API_TOKEN: "change-this-token"
+      GATEWAY_URL: "host.docker.internal:18789"
+      OPENCLAW_HOME: "/data/.openclaw"
+      OPENCLAW_CONFIG_PATH: "/data/.openclaw/openclaw.json"
+      OPENCLAW_WORKSPACE_ROOT: "/data/workspace"
+      CODEX_HOME: "/data/.codex"
     volumes:
-      - openclaw-home:/root/.openclaw
-      - openclaw-workspace:/root/.openclaw/workspace
-      - codex-home:/root/.codex
-      - control-center-runtime:/app/runtime
+      - openclaw-home:/data/.openclaw
+      - openclaw-workspace:/data/workspace
+      - codex-home:/data/.codex
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -37,6 +34,4 @@ volumes:
   openclaw-workspace:
     driver: local
   codex-home:
-    driver: local
-  control-center-runtime:
     driver: local

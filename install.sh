@@ -3,18 +3,18 @@
 
 set -e
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
 # 配置
 IMAGE_NAME="ghcr.io/rdone4425/openclaw-control-center"
 CONTAINER_NAME="openclaw-control-center"
 PORT_UI=4310
 PORT_GATEWAY=18789
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  OpenClaw Control Center 安装脚本${NC}"
@@ -29,24 +29,15 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker compose &> /dev/null; then
-    echo -e "${RED}错误: Docker Compose 未安装${NC}"
-    exit 1
-fi
-
 echo -e "${GREEN}✓ Docker 已安装${NC}"
 docker --version
-docker compose version
 echo
 
-# 检查镜像是否可用
-echo -e "${YELLOW}检查 Docker 镜像...${NC}"
-if docker manifest inspect "${IMAGE_NAME}:latest" &> /dev/null; then
-    echo -e "${GREEN}✓ 镜像存在${NC}"
-else
-    echo -e "${YELLOW}⚠ 镜像不存在，将从源码构建${NC}"
-    echo "请确保当前目录有 Dockerfile"
-fi
+# 拉取镜像
+echo -e "${YELLOW}拉取 Docker 镜像...${NC}"
+echo "镜像: $IMAGE_NAME"
+docker pull ${IMAGE_NAME}:latest
+echo -e "${GREEN}✓ 镜像拉取完成${NC}"
 echo
 
 # 创建必要目录
@@ -57,9 +48,34 @@ mkdir -p ~/.codex
 echo -e "${GREEN}✓ 目录创建完成${NC}"
 echo
 
+# 停止并删除旧容器
+echo -e "${YELLOW}清理旧容器...${NC}"
+docker rm -f ${CONTAINER_NAME} 2>/dev/null || true
+echo
+
 # 启动容器
 echo -e "${YELLOW}启动容器...${NC}"
-docker compose up -d --build
+docker run -d \
+    --name ${CONTAINER_NAME} \
+    -p ${PORT_UI}:${PORT_UI} \
+    -p ${PORT_GATEWAY}:${PORT_GATEWAY} \
+    -e NODE_ENV=production \
+    -e UI_MODE=true \
+    -e UI_PORT=${PORT_UI} \
+    -e UI_BIND_ADDRESS=0.0.0.0 \
+    -e READONLY_MODE=true \
+    -e LOCAL_TOKEN_AUTH_REQUIRED=true \
+    -e LOCAL_API_TOKEN=change-this-token \
+    -e GATEWAY_URL=host.docker.internal:18789 \
+    -e OPENCLAW_HOME=/data/.openclaw \
+    -e OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json \
+    -e OPENCLAW_WORKSPACE_ROOT=/data/workspace \
+    -e CODEX_HOME=/data/.codex \
+    -v openclaw-home:/data/.openclaw \
+    -v openclaw-workspace:/data/workspace \
+    -v codex-home:/data/.codex \
+    --add-host=host.docker.internal:host-gateway \
+    ${IMAGE_NAME}:latest
 
 echo
 echo -e "${GREEN}========================================${NC}"
@@ -71,7 +87,8 @@ echo -e "  • Control Center: ${BLUE}http://localhost:${PORT_UI}${NC}"
 echo -e "  • OpenClaw Gateway: ${BLUE}ws://localhost:${PORT_GATEWAY}${NC}"
 echo
 echo -e "常用命令:"
-echo -e "  • 查看日志: ${YELLOW}docker compose logs -f${NC}"
-echo -e "  • 停止: ${YELLOW}docker compose down${NC}"
-echo -e "  • 重启: ${YELLOW}docker compose restart${NC}"
+echo -e "  • 查看日志: ${YELLOW}docker logs -f ${CONTAINER_NAME}${NC}"
+echo -e "  • 停止: ${YELLOW}docker stop ${CONTAINER_NAME}${NC}"
+echo -e "  • 启动: ${YELLOW}docker start ${CONTAINER_NAME}${NC}"
+echo -e "  • 删除: ${YELLOW}docker rm -f ${CONTAINER_NAME}${NC}"
 echo
